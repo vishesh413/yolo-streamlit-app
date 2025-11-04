@@ -2,75 +2,67 @@ import streamlit as st
 from ultralytics import YOLO
 import cv2
 import tempfile
-import numpy as np
-from PIL import Image
+import os
 
-# -------------------------------
-# 🎯 Page config
-# -------------------------------
-st.set_page_config(page_title="YOLO Object Detection", layout="wide")
-st.title("🧠 YOLO Object Detection App")
-st.markdown("Upload an **image** or **video** and let your custom YOLO model detect objects!")
+st.set_page_config(page_title="YOLOv8 Detection App", layout="wide")
+st.title("🎥 YOLOv8 Object Detection App")
 
-# -------------------------------
-# ⚙️ Load Model
-# -------------------------------
+# Model load karna
 @st.cache_resource
 def load_model():
-    model_path = "best.pt"  # Your trained model file
+    model_path = "best.pt"  # same folder me honi chahiye
     model = YOLO(model_path)
     return model
 
 model = load_model()
+st.sidebar.header("Choose Input Type")
+option = st.sidebar.radio("Select type:", ["Image", "Video"])
 
-# -------------------------------
-# 🎛️ Sidebar Controls
-# -------------------------------
-st.sidebar.header("⚙️ Settings")
-conf_threshold = st.sidebar.slider("Confidence Threshold", 0.1, 1.0, 0.4, 0.05)
-source_type = st.sidebar.radio("Select Source Type:", ("Image", "Video"))
+# IMAGE DETECTION
+if option == "Image":
+    uploaded_file = st.file_uploader("Upload an image...", type=["jpg", "jpeg", "png"])
+    if uploaded_file is not None:
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(uploaded_file.read())
+            image_path = tmp.name
 
-# -------------------------------
-# 📸 Image Detection
-# -------------------------------
-def detect_image(uploaded_file):
-    image = Image.open(uploaded_file)
-    st.image(image, caption="📥 Uploaded Image", use_container_width=True)
+        st.image(image_path, caption="Uploaded Image", use_container_width=True)
+        st.write("Detecting objects... ⏳")
 
-    results = model.predict(np.array(image), conf=conf_threshold)
-    res_plotted = results[0].plot()[:, :, ::-1]
-    st.image(res_plotted, caption="🎯 Detection Result", use_container_width=True)
+        results = model.predict(source=image_path, conf=0.5)
+        result_image = results[0].plot()
 
-# -------------------------------
-# 🎥 Video Detection
-# -------------------------------
-def detect_video(uploaded_file):
-    tfile = tempfile.NamedTemporaryFile(delete=False)
-    tfile.write(uploaded_file.read())
-    cap = cv2.VideoCapture(tfile.name)
-    
-    stframe = st.empty()
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        results = model.predict(frame, conf=conf_threshold)
-        annotated_frame = results[0].plot()
-        stframe.image(annotated_frame, channels="BGR", use_container_width=True)
-    cap.release()
+        st.image(result_image, caption="Detection Result", use_container_width=True)
+        st.success("✅ Detection complete!")
 
-# -------------------------------
-# 🚀 Upload Section
-# -------------------------------
-uploaded_file = st.file_uploader("Upload your file", type=["jpg", "jpeg", "png", "mp4", "avi", "mov"])
+# VIDEO DETECTION
+elif option == "Video":
+    uploaded_video = st.file_uploader("Upload a video...", type=["mp4", "mov", "avi", "mkv"])
+    if uploaded_video is not None:
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(uploaded_video.read())
+            video_path = tmp.name
 
-if uploaded_file:
-    if source_type == "Image" and uploaded_file.type.startswith("image"):
-        detect_image(uploaded_file)
-    elif source_type == "Video" and uploaded_file.type.startswith("video"):
-        detect_video(uploaded_file)
-    else:
-        st.warning("⚠️ Please upload a valid file type according to your selection.")
+        st.video(video_path)
+        st.write("Processing video... ⏳")
+
+        cap = cv2.VideoCapture(video_path)
+        output_path = os.path.join(tempfile.gettempdir(), "output.mp4")
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_path, fourcc, 20.0, (int(cap.get(3)), int(cap.get(4))))
+
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            results = model.predict(frame)
+            annotated_frame = results[0].plot()
+            out.write(annotated_frame)
+
+        cap.release()
+        out.release()
+        st.success("✅ Video processing complete!")
+        st.video(output_path)
 
 st.markdown("---")
-st.markdown("💡 **Tip:** Increase the confidence threshold for fewer but more accurate detections.")
+st.caption("Made by Vishesh 🧠 using YOLOv8 + Streamlit")
